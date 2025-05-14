@@ -2,8 +2,7 @@ package org.sbpo2025.challenge;
 
 import org.apache.commons.lang3.time.StopWatch;
 
-// import java.lang.reflect.Array;
-import java.util.ArrayList;
+// import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -11,12 +10,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-import com.google.ortools.sat.CpModel;
-import com.google.ortools.sat.CpSolver;
-import com.google.ortools.sat.CpSolverStatus;
-// import com.google.ortools.sat.IntVar;
-import com.google.ortools.sat.LinearExpr;
-import com.google.ortools.sat.BoolVar;
+import com.google.ortools.Loader;
+import com.google.ortools.linearsolver.MPConstraint;
+import com.google.ortools.linearsolver.MPObjective;
+import com.google.ortools.linearsolver.MPSolver;
+import com.google.ortools.linearsolver.MPVariable;
 
 public class ChallengeSolver {
     private final long MAX_RUNTIME = 600000; // milliseconds; 10 minutes
@@ -31,16 +29,8 @@ public class ChallengeSolver {
     private int nAisles;
     private long[] nItemsPerOrder;
 
-    // Essa parte é para carregar o OR-TOOLS manualmente, caso não consiga
-//    static {
-//        try {
-//            System.load("/home/arthurgrandao/.m2/repository/com/google/ortools/ortools-linux-x86-64/9.11.4210/ortools-linux-x86-64/libjniortools.so");
-//        } catch (UnsatisfiedLinkError e) {
-//            System.err.println("Native code library failed to load.\n" + e);
-//            System.exit(1);
-//        }
-//    }
-    
+    static { Loader.loadNativeLibraries(); }
+
     public ChallengeSolver(
             List<Map<Integer, Integer>> orders, List<Map<Integer, Integer>> aisles, int nItems, int waveSizeLB, int waveSizeUB) {
         this.orders = orders;
@@ -50,7 +40,7 @@ public class ChallengeSolver {
         this.waveSizeUB = waveSizeUB;
     }
 
-    protected void getItemsPerOrder(List<Map<Integer, Integer>> orders){
+    protected void getItemsPerOrder(List<Map<Integer, Integer>> orders) {
         this.nItemsPerOrder = new long[this.nOrders];
         
         for (int i = 0; i < this.nOrders; i++) {
@@ -66,115 +56,97 @@ public class ChallengeSolver {
     }
 
     public ChallengeSolution solve(StopWatch stopWatch) {
-        // Inicialização
-        CpModel model = new CpModel();
+        MPSolver solver = MPSolver.createSolver("SCIP");
+        
+        if (solver == null) {
+            System.out.println("Could not create solver SCIP");
+            return new ChallengeSolution(Set.of(), Set.of());
+        }
 
-        this.nOrders = orders.size(); // número de pedidos
-        this.nAisles = aisles.size(); // número de corredores
+        this.nOrders = orders.size(); // Numero de pedidos
+        this.nAisles = aisles.size(); // Numero de corredores
+        
+        getItemsPerOrder(orders);
 
-        getItemsPerOrder(orders); // atualiza o vetor que mantém a informação
+        // Criação das boolenas de corredores(c) e pedidos(p)
+        MPVariable[] p = new MPVariable[nOrders];
+        MPVariable[] c = new MPVariable[nAisles];
 
-        BoolVar[] p = new BoolVar[nOrders];
-        BoolVar[] c = new BoolVar[nAisles];
+        for (int i = 0; i < nOrders; i++) {
+            p[i] = solver.makeBoolVar("p_" + i);
+        }
+        for (int i = 0; i < nAisles; i++) {
+            c[i] = solver.makeBoolVar("c_" + i);
+        }
 
-        // Criação das booleanas p (pedidos) e c (corredores)
-        for (int i = 0; i < nOrders; i++)
-            p[i] = model.newBoolVar("p_"+i);
-        for (int i = 0; i < nAisles; i++)
-            c[i] = model.newBoolVar("c_"+i);        
+        // Restrição de tamanho da wave (LB e UB)
+        MPConstraint itemsBound = solver.makeConstraint(waveSizeLB, waveSizeUB, "waveSize");
+        for (int i = 0; i < nOrders; i++) {
+            itemsBound.setCoefficient(p[i], nItemsPerOrder[i]);
+        }
 
-        // Restrições de LB e UB
-        LinearExpr totalItemsSelectedExpression = LinearExpr.weightedSum(p, nItemsPerOrder);
-        LinearExpr totalAislesSelected = LinearExpr.sum(c);
-
-        model.addLessOrEqual(
-            totalItemsSelectedExpression,
-            waveSizeUB
-        );
-
-        model.addGreaterOrEqual(
-            totalItemsSelectedExpression,
-            waveSizeLB
-        );
-
-        // Restrições de item
+        // Restrições de disponibilidade de itens
         for (int itemId = 0; itemId < nItems; itemId++) {
-            List<BoolVar> pVars = new ArrayList<>();
-            List<Long> pCoeffs = new ArrayList<>();
-            List<BoolVar> cVars = new ArrayList<>();
-            List<Long> cCoeffs = new ArrayList<>();
+            MPConstraint itemConstraint = solver.makeConstraint(
+                Double.NEGATIVE_INFINITY, 0, "item_" + itemId);
             
             for (int orderIdx = 0; orderIdx < nOrders; orderIdx++) {
                 int quantity = orders.get(orderIdx).getOrDefault(itemId, 0);
                 if (quantity > 0) {
-                    pVars.add(p[orderIdx]);
-                    pCoeffs.add((long)quantity);
+                    itemConstraint.setCoefficient(p[orderIdx], quantity);
                 }
             }
-            
             for (int aisleIdx = 0; aisleIdx < nAisles; aisleIdx++) {
                 int quantity = aisles.get(aisleIdx).getOrDefault(itemId, 0);
                 if (quantity > 0) {
-                    cVars.add(c[aisleIdx]);
-                    cCoeffs.add((long)quantity);
+                    itemConstraint.setCoefficient(c[aisleIdx], -quantity);
                 }
             }
-            
-            if (!pVars.isEmpty() && !cVars.isEmpty()) {
-                model.addLessOrEqual(
-                    LinearExpr.weightedSum(pVars.toArray(new BoolVar[0]), 
-                    pCoeffs.stream().mapToLong(Long::longValue).toArray()),
-                    LinearExpr.weightedSum(cVars.toArray(new BoolVar[0]),
-                    cCoeffs.stream().mapToLong(Long::longValue).toArray())
-                );
+        }
+
+        // Objective 
+        // Minimize (10^5*Corredores - K*Itens)
+        
+        double M = 100000.0; // Peso corredores (ajustar)
+        double K = 1.0; // Peso itens (ajustar)
+        MPObjective objective = solver.objective();
+
+        for (int i = 0; i < nAisles; i++) {
+            objective.setCoefficient(c[i], M);
+        }
+
+        for (int orderIdx = 0; orderIdx < nOrders; orderIdx++) {
+            long totalItemsInOrder = 0;
+            for (int quantity : orders.get(orderIdx).values()) {
+                totalItemsInOrder += quantity;
             }
+            objective.setCoefficient(p[orderIdx], -K * totalItemsInOrder);
         }
 
-        // Objetivo
+        objective.setMinimization();
 
-        // minimize (total_aisles - K*total_items)
-        
-        double K = 10.0; // peso
-        double scalingFactor = 1000.0; // escala
-
-        long scaledWeight = (long)(-K * scalingFactor);
-
-        if (scaledWeight < Integer.MIN_VALUE || scaledWeight > Integer.MAX_VALUE) {
-            throw new ArithmeticException("Scaling factor too large");
-        }
-
-        model.minimize(
-            LinearExpr.sum(new LinearExpr[] {
-                totalAislesSelected,
-                LinearExpr.term(totalItemsSelectedExpression, (long)(scaledWeight))
-            })
-        );
-
-
-        // Solução
-        CpSolver solver = new CpSolver();
-        
+        // Indicando o time limit
         long remainingTime = getRemainingTime(stopWatch) - 5;
+        solver.setTimeLimit(remainingTime * 1000); // Convert to milliseconds
         
-        int nThreads = 6; // Alterar para 8
+        // Habilitante o uso de múltiplos threads
+        solver.setNumThreads(6); // Ajustar o numero de threads (oficial é 8)
 
-        solver.getParameters().setMaxTimeInSeconds(remainingTime); // time limit
-        solver.getParameters().setNumSearchWorkers(nThreads); // num. threads
+        // Solve
+        MPSolver.ResultStatus status = solver.solve();
 
-        CpSolverStatus status = solver.solve(model);
-
-        // Extração da solução
-        if (status == CpSolverStatus.OPTIMAL || status == CpSolverStatus.FEASIBLE) {
+        // Extraindo a solução
+        if (status == MPSolver.ResultStatus.OPTIMAL || status == MPSolver.ResultStatus.FEASIBLE) {
             Set<Integer> selectedOrders = new HashSet<>();
             Set<Integer> accessedAisles = new HashSet<>();
             
             for (int i = 0; i < p.length; i++) {
-                if (solver.value(p[i]) == 1L) {
+                if (p[i].solutionValue() == 1.0) {
                     selectedOrders.add(i);
                 }
             }
             for (int i = 0; i < c.length; i++) {
-                if (solver.value(c[i]) == 1L) {
+                if (c[i].solutionValue() == 1.0) {
                     accessedAisles.add(i);
                 }
             }
