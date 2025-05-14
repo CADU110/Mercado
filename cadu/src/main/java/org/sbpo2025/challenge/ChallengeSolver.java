@@ -107,12 +107,15 @@ public class ChallengeSolver {
         // Objective 
         // Minimize (10^5*Corredores - K*Itens)
         
-        double M = 100000.0; // Peso corredores (ajustar)
-        double K = 1.0; // Peso itens (ajustar)
+        //double M = 100000.0; // Peso corredores (ajustar)
+        //double K = 1.0; // Peso itens (ajustar)
+        double K = waveSizeUB;
         MPObjective objective = solver.objective();
+        
+    
 
         for (int i = 0; i < nAisles; i++) {
-            objective.setCoefficient(c[i], M);
+            objective.setCoefficient(c[i], K);
         }
 
         for (int orderIdx = 0; orderIdx < nOrders; orderIdx++) {
@@ -120,7 +123,7 @@ public class ChallengeSolver {
             for (int quantity : orders.get(orderIdx).values()) {
                 totalItemsInOrder += quantity;
             }
-            objective.setCoefficient(p[orderIdx], -K * totalItemsInOrder);
+            objective.setCoefficient(p[orderIdx], -1 * totalItemsInOrder);
         }
 
         objective.setMinimization();
