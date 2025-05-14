@@ -2,7 +2,7 @@ package org.sbpo2025.challenge;
 
 import org.apache.commons.lang3.time.StopWatch;
 
-import java.lang.reflect.Array;
+// import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -14,7 +14,7 @@ import java.util.concurrent.TimeUnit;
 import com.google.ortools.sat.CpModel;
 import com.google.ortools.sat.CpSolver;
 import com.google.ortools.sat.CpSolverStatus;
-import com.google.ortools.sat.IntVar;
+// import com.google.ortools.sat.IntVar;
 import com.google.ortools.sat.LinearExpr;
 import com.google.ortools.sat.BoolVar;
 
@@ -34,7 +34,7 @@ public class ChallengeSolver {
     // Essa parte é para carregar o OR-TOOLS manualmente, caso não consiga
 //    static {
 //        try {
-//            System.load("$HOME/.m2/repository/com/google/ortools/ortools-linux-x86-64/9.11.4210/ortools-linux-x86-64/libjniortools.so");
+//            System.load("/home/arthurgrandao/.m2/repository/com/google/ortools/ortools-linux-x86-64/9.11.4210/ortools-linux-x86-64/libjniortools.so");
 //        } catch (UnsatisfiedLinkError e) {
 //            System.err.println("Native code library failed to load.\n" + e);
 //            System.exit(1);
@@ -132,7 +132,6 @@ public class ChallengeSolver {
 
         // Objetivo
 
-        // Para o teste ficou
         // minimize (total_aisles - K*total_items)
         
         double K = 10.0; // peso
@@ -154,6 +153,14 @@ public class ChallengeSolver {
 
         // Solução
         CpSolver solver = new CpSolver();
+        
+        long remainingTime = getRemainingTime(stopWatch) - 5;
+        
+        int nThreads = 6; // Alterar para 8
+
+        solver.getParameters().setMaxTimeInSeconds(remainingTime); // time limit
+        solver.getParameters().setNumSearchWorkers(nThreads); // num. threads
+
         CpSolverStatus status = solver.solve(model);
 
         // Extração da solução
