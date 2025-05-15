@@ -5,7 +5,7 @@ import platform
 
 # Paths to the libraries
 CPLEX_PATH = "$HOME/CPLEX_Studio2211/opl/bin/arm64_osx/"
-OR_TOOLS_PATH = "$HOME/Documents/or-tools/build/lib/"
+OR_TOOLS_PATH = "/or-tools"
 
 USE_CPLEX = True
 USE_OR_TOOLS = True
