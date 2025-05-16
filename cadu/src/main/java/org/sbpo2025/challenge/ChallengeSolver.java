@@ -58,10 +58,8 @@ public class ChallengeSolver {
     public ChallengeSolution solve(StopWatch stopWatch) {
         MPSolver solver = MPSolver.createSolver("SCIP");
         
-        if (solver == null) {
-            System.out.println("Could not create solver SCIP");
-            return new ChallengeSolution(Set.of(), Set.of());
-        }
+        if (solver == null)
+            return null;
 
         this.nOrders = orders.size(); // Numero de pedidos
         this.nAisles = aisles.size(); // Numero de corredores
@@ -137,6 +135,8 @@ public class ChallengeSolver {
 
         // Extraindo a solução
         if (status == MPSolver.ResultStatus.OPTIMAL || status == MPSolver.ResultStatus.FEASIBLE) {
+            System.out.println("Solver found a solution: " + status);
+
             Set<Integer> selectedOrders = new HashSet<>();
             Set<Integer> accessedAisles = new HashSet<>();
             
@@ -152,7 +152,8 @@ public class ChallengeSolver {
             }
             return new ChallengeSolution(selectedOrders, accessedAisles);
         }
-        return new ChallengeSolution(Set.of(), Set.of());
+
+        return null;
     }
 
     /*

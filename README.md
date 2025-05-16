@@ -14,7 +14,7 @@
 #### Restrições
 
 ```math
-LB \leq \sum_{j \in C} c_j \leq UB
+LB \leq \left( \sum_{k \in P} u_k \cdot p_k \right) \leq UB
 ```
 
 ```math
