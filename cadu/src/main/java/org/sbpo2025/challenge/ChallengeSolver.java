@@ -78,7 +78,7 @@ public class ChallengeSolver {
         }
 
         // Restrição de tamanho da wave (LB e UB)
-        MPConstraint itemsBound = solver.makeConstraint(waveSizeLB, waveSizeUB, "waveSize");
+        MPConstraint itemsBound = solver.makeConstraint(Math.max(waveSizeLB, 1), waveSizeUB, "waveSize");
         for (int i = 0; i < nOrders; i++) {
             itemsBound.setCoefficient(p[i], nItemsPerOrder[i]);
         }
