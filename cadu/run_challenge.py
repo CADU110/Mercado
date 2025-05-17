@@ -7,7 +7,7 @@ import platform
 CPLEX_PATH = "$HOME/CPLEX_Studio2211/opl/bin/arm64_osx/"
 OR_TOOLS_PATH = "./or-tools"
 
-USE_CPLEX = True
+USE_CPLEX = False
 USE_OR_TOOLS = True
 
 MAX_RUNNING_TIME = "605s"

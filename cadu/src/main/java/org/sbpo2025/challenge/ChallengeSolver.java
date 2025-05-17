@@ -102,8 +102,8 @@ public class ChallengeSolver {
             }
         }
 
-        // Objective 
-        // Minimize (10^5*Corredores - K*Itens)
+        // Objetivo
+        // Min (10^5*Corredores - 1*Itens)
         
         double M = 100000.0; // Peso corredores (ajustar)
         double K = 1.0; // Peso itens (ajustar)
@@ -123,12 +123,12 @@ public class ChallengeSolver {
 
         objective.setMinimization();
 
-        // Indicando o time limit
+        //  Indica o limite de tempo
         long remainingTime = getRemainingTime(stopWatch) - 5;
-        solver.setTimeLimit(remainingTime * 1000); // Convert to milliseconds
+        solver.setTimeLimit(remainingTime * 1000); // millisegundos
         
-        // Habilitante o uso de múltiplos threads
-        solver.setNumThreads(6); // Ajustar o numero de threads (oficial é 8)
+        // Habilita o uso de múltiplos threads
+        solver.setNumThreads(8); // Ajustar para a maquina em que vais rodar (oficial é 8)
 
         // Solve
         MPSolver.ResultStatus status = solver.solve();
@@ -150,7 +150,17 @@ public class ChallengeSolver {
                     accessedAisles.add(i);
                 }
             }
-            return new ChallengeSolution(selectedOrders, accessedAisles);
+            
+            ChallengeSolution challengeSolution = new ChallengeSolution(selectedOrders, accessedAisles);
+            
+            if (!isSolutionFeasible(challengeSolution)) {
+                System.out.println("Solution is not feasible");
+                return null;
+            }
+            
+            System.out.println("Objective function value: " + computeObjectiveFunction(challengeSolution));
+
+            return challengeSolution;
         }
 
         return null;
