@@ -28,6 +28,7 @@ public class ChallengeSolver {
     private int nOrders;
     private int nAisles;
     private long[] nItemsPerOrder;
+    private long[] itemsOrdered;
 
     static { Loader.loadNativeLibraries(); }
 
@@ -42,21 +43,224 @@ public class ChallengeSolver {
 
     protected void getItemsPerOrder(List<Map<Integer, Integer>> orders) {
         this.nItemsPerOrder = new long[this.nOrders];
+        this.itemsOrdered = new long[this.nItems];
         
         for (int i = 0; i < this.nOrders; i++) {
             Map<Integer, Integer> order = orders.get(i);
             long totalItems = 0;
             
-            for (int quantity : order.values()) {
-                totalItems += quantity;
+            for (int item : order.keySet()) {
+                totalItems += order.get(item);
+                this.itemsOrdered[item] += order.get(item);
             }
             
             this.nItemsPerOrder[i] = totalItems;
         }
     }
 
+    private  ChallengeSolution optimalResult(StopWatch stopWatch, MPSolver solver, MPVariable[] p, MPVariable[] c, double partialScore, int nAislesAccessed) {
+        MPConstraint minCorridors = solver.makeConstraint(nAislesAccessed+1, Double.POSITIVE_INFINITY, "minCorridors");
+        for (int i = 0; i < nAisles; i++) {
+            minCorridors.setCoefficient(c[i], 1);
+        }
+
+        double newScore = 0.0;
+        double bestScore = partialScore;
+
+        ChallengeSolution partialSolution = null;
+        ChallengeSolution bestSolution = null;
+
+
+        do {
+            long remainingTime = getRemainingTime(stopWatch) - 5;
+            solver.setTimeLimit(remainingTime * 1000); // millisegundos
+
+            System.out.println("Solving with aisles ≥ " + minCorridors.lb());
+            MPSolver.ResultStatus status = solver.solve();
+
+            if (status == MPSolver.ResultStatus.OPTIMAL || status == MPSolver.ResultStatus.FEASIBLE) {
+                Set<Integer> selectedOrders = new HashSet<>();
+                Set<Integer> accessedAisles = new HashSet<>();
+
+                int totalItemsPickedUp = 0;
+                int totalAislesAccessed = 0;
+                
+                for (int i = 0; i < p.length; i++) {
+                    if (p[i].solutionValue() == 1.0) {
+                        totalItemsPickedUp += nItemsPerOrder[i];
+                        selectedOrders.add(i);
+                    }
+                }
+                for (int i = 0; i < c.length; i++) {
+                    if (c[i].solutionValue() == 1.0) {
+                        totalAislesAccessed += 1;
+                        accessedAisles.add(i);
+                    }
+                }
+                
+                partialSolution = new ChallengeSolution(selectedOrders, accessedAisles);
+                newScore = computeObjectiveFunction(partialSolution);
+
+                if (!isSolutionFeasible(partialSolution)) {
+                    System.out.println("Solution is not feasible");
+                    return null;
+                }
+
+                if (newScore > bestScore) {
+                    bestScore = newScore;
+                    bestSolution = partialSolution;
+                }
+
+                System.out.println("Solver found a new solution: " + status);
+                System.out.println("Objective function value: " + computeObjectiveFunction(partialSolution));
+                System.out.println("Duration: " + (remainingTime + 5 - getRemainingTime(stopWatch)) + "s");
+                System.out.println("Remaining time: " + getRemainingTime(stopWatch) + "s");
+                System.out.println("Total items picked up: " + totalItemsPickedUp + " (out of " + waveSizeUB + ")");
+                System.out.println("Total aisles accessed: " + totalAislesAccessed + "\n");
+
+                if (totalAislesAccessed+1 <= nAisles) minCorridors.setLb(totalAislesAccessed+1);
+                else break;
+            }
+            else {
+                System.out.println("Solver found no solution: " + status + "\n");
+                break;
+            }
+        } while (getRemainingTime(stopWatch) > 10 && newScore > 0.0);
+
+        System.out.println("Best solution found: " + bestScore);
+        return bestSolution;
+    }
+
+    private ChallengeSolution feasibleResult(StopWatch stopWatch, MPSolver solver, MPVariable[] p, MPVariable[] c, double partialScore) {
+        // Re-fazendo o objetivo
+        MPObjective objective = solver.objective();
+
+        // objective.clear();
+
+        double M = partialScore*1.15; // Base penalty for using a corridor
+        // double K = 1.0;      // Base gain per item in selected orders
+
+        for (int i = 0; i < nOrders; i++) {
+            long totalItemsInOrder = 0;
+            for (int quantity : orders.get(i).values()) {
+                totalItemsInOrder += quantity;
+            }
+            objective.setCoefficient(p[i], -totalItemsInOrder);
+        }
+
+        for (int i = 0; i < nAisles; i++) {
+            objective.setCoefficient(c[i], M);
+        }
+
+        objective.setMinimization();
+
+        double newScore = 0.0;
+        double bestScore = partialScore;
+
+        ChallengeSolution partialSolution = null;
+        ChallengeSolution bestSolution = null;
+
+        long remainingTime = getRemainingTime(stopWatch) - 5;
+        solver.setTimeLimit(remainingTime * 1000); // millisegundos
+
+        System.out.println("Solving with M = " + partialScore*1.15);
+        MPSolver.ResultStatus status = solver.solve();
+
+        if (status == MPSolver.ResultStatus.OPTIMAL || status == MPSolver.ResultStatus.FEASIBLE) {
+            Set<Integer> selectedOrders = new HashSet<>();
+            Set<Integer> accessedAisles = new HashSet<>();
+
+            int totalItemsPickedUp = 0;
+            int totalAislesAccessed = 0;
+            
+            for (int i = 0; i < p.length; i++) {
+                if (p[i].solutionValue() == 1.0) {
+                    totalItemsPickedUp += nItemsPerOrder[i];
+                    selectedOrders.add(i);
+                }
+            }
+            for (int i = 0; i < c.length; i++) {
+                if (c[i].solutionValue() == 1.0) {
+                    totalAislesAccessed += 1;
+                    accessedAisles.add(i);
+                }
+            }
+            
+            partialSolution = new ChallengeSolution(selectedOrders, accessedAisles);
+            newScore = computeObjectiveFunction(partialSolution);
+
+            if (!isSolutionFeasible(partialSolution)) {
+                System.out.println("Solution is not feasible");
+                return null;
+            }
+
+            if (newScore > bestScore) {
+                bestScore = newScore;
+                bestSolution = partialSolution;
+            }
+
+            System.out.println("Solver found a new solution: " + status);
+            System.out.println("Objective function value: " + computeObjectiveFunction(partialSolution));
+            System.out.println("Duration: " + (remainingTime + 5 - getRemainingTime(stopWatch)) + "s");
+            System.out.println("Remaining time: " + getRemainingTime(stopWatch) + "s");
+            System.out.println("Total items picked up: " + totalItemsPickedUp + " (out of " + waveSizeUB + ")");
+            System.out.println("Total aisles accessed: " + totalAislesAccessed);
+        }
+
+        return bestSolution;
+    }
+
+    private ChallengeSolution notFoundResult(StopWatch stopWatch, MPSolver solver, MPObjective objective, MPVariable[] p, MPVariable[] c) {
+        // Re-fazendo o objetivo
+        long remainingTime = getRemainingTime(stopWatch) - 5;
+        solver.setTimeLimit(remainingTime * 1000); // millisegundos
+
+        MPSolver.ResultStatus status = solver.solve();
+
+        if (status == MPSolver.ResultStatus.OPTIMAL || status == MPSolver.ResultStatus.FEASIBLE) {
+            Set<Integer> selectedOrders = new HashSet<>();
+            Set<Integer> accessedAisles = new HashSet<>();
+
+            int totalItemsPickedUp = 0;
+            int totalAislesAccessed = 0;
+            
+            for (int i = 0; i < p.length; i++) {
+                if (p[i].solutionValue() == 1.0) {
+                    totalItemsPickedUp += nItemsPerOrder[i];
+                    selectedOrders.add(i);
+                }
+            }
+            for (int i = 0; i < c.length; i++) {
+                if (c[i].solutionValue() == 1.0) {
+                    totalAislesAccessed += 1;
+                    accessedAisles.add(i);
+                }
+            }
+            
+            ChallengeSolution challengeSolution = new ChallengeSolution(selectedOrders, accessedAisles);
+            double score = computeObjectiveFunction(challengeSolution);
+
+            if (!isSolutionFeasible(challengeSolution)) {
+                System.out.println("Solution is not feasible");
+                return null;
+            }
+
+            System.out.println("Solver found a new solution: " + status);
+            System.out.println("Objective function value: " + score);
+            System.out.println("Duration: " + (remainingTime + 5 - getRemainingTime(stopWatch)) + "s");
+            System.out.println("Remaining time: " + getRemainingTime(stopWatch) + "s");
+            System.out.println("Total items picked up: " + totalItemsPickedUp + " (out of " + waveSizeUB + ")");
+            System.out.println("Total aisles accessed: " + totalAislesAccessed);
+            
+            return challengeSolution;
+        }
+        
+        return null;
+    }
+
+
     public ChallengeSolution solve(StopWatch stopWatch) {
-        MPSolver solver = MPSolver.createSolver("SCIP");
+        MPSolver solver = MPSolver.createSolver("SAT");
         
         if (solver == null)
             return null;
@@ -103,67 +307,108 @@ public class ChallengeSolver {
         }
 
         // Objetivo
-        // Min (10^5*Corredores - 1*Itens)
+        // Min (UB*Corredores - 1*Itens)
         
-        double M = 100000.0; // Peso corredores (ajustar)
-        double K = 1.0; // Peso itens (ajustar)
+        // Constants to tune the relative importance of corridors vs. items
+        double M = 100000; // Base penalty for using a corridor
+        // double K = 1.0;      // Base gain per item in selected orders
+
+        // Define the objective function
         MPObjective objective = solver.objective();
+
 
         for (int i = 0; i < nAisles; i++) {
             objective.setCoefficient(c[i], M);
         }
 
+        // Reward orders based on the number of items they contribute
         for (int orderIdx = 0; orderIdx < nOrders; orderIdx++) {
             long totalItemsInOrder = 0;
             for (int quantity : orders.get(orderIdx).values()) {
                 totalItemsInOrder += quantity;
             }
-            objective.setCoefficient(p[orderIdx], -K * totalItemsInOrder);
+            objective.setCoefficient(p[orderIdx], -totalItemsInOrder);
         }
 
+        // Set the objective to minimization
         objective.setMinimization();
 
         //  Indica o limite de tempo
-        long remainingTime = getRemainingTime(stopWatch) - 5;
-        solver.setTimeLimit(remainingTime * 1000); // millisegundos
+        solver.setTimeLimit(90 * 1000); // 90 segundos (em ms)
         
         // Habilita o uso de múltiplos threads
-        solver.setNumThreads(8); // Ajustar para a maquina em que vais rodar (oficial é 8)
+        solver.setNumThreads(6); // Ajustar para a maquina em que vais rodar (oficial é 8)
 
         // Solve
+
+        long remainingTime = getRemainingTime(stopWatch);
+
         MPSolver.ResultStatus status = solver.solve();
 
         // Extraindo a solução
+        ChallengeSolution partialSolution = null;
+        double partialScore = 0.0;
+
         if (status == MPSolver.ResultStatus.OPTIMAL || status == MPSolver.ResultStatus.FEASIBLE) {
-            System.out.println("Solver found a solution: " + status);
+            System.out.println("Solver found a partial solution: " + status);
 
             Set<Integer> selectedOrders = new HashSet<>();
             Set<Integer> accessedAisles = new HashSet<>();
+
+            int totalItemsPickedUp = 0;
+            int totalAislesAccessed = 0;
             
             for (int i = 0; i < p.length; i++) {
                 if (p[i].solutionValue() == 1.0) {
+                    totalItemsPickedUp += nItemsPerOrder[i];
                     selectedOrders.add(i);
                 }
             }
             for (int i = 0; i < c.length; i++) {
                 if (c[i].solutionValue() == 1.0) {
+                    totalAislesAccessed += 1;
                     accessedAisles.add(i);
                 }
             }
             
-            ChallengeSolution challengeSolution = new ChallengeSolution(selectedOrders, accessedAisles);
+            partialSolution = new ChallengeSolution(selectedOrders, accessedAisles);
+            partialScore = computeObjectiveFunction(partialSolution);
             
-            if (!isSolutionFeasible(challengeSolution)) {
+            if (!isSolutionFeasible(partialSolution)) {
                 System.out.println("Solution is not feasible");
                 return null;
             }
-            
-            System.out.println("Objective function value: " + computeObjectiveFunction(challengeSolution));
 
-            return challengeSolution;
+            
+            System.out.println("Objective function value: " + partialScore);
+            System.out.println("Duration: " + (remainingTime - getRemainingTime(stopWatch)) + "s");
+            System.out.println("Remaining time: " + getRemainingTime(stopWatch) + "s");
+            System.out.println("Total items picked up: " + totalItemsPickedUp + " (out of " + waveSizeUB + ")");
+            System.out.println("Total aisles accessed: " + totalAislesAccessed + "\n");
+
+            // System.out.println("Score com 10^5" + (100000 * totalAislesAccessed - totalItemsPickedUp));
+            // System.out.println("Score com UB: " + (waveSizeUB * totalAislesAccessed - totalItemsPickedUp));
+            
+            ChallengeSolution newSolution = null;
+
+            if (status == MPSolver.ResultStatus.OPTIMAL) {
+                newSolution = optimalResult(stopWatch, solver, p, c, partialScore, totalAislesAccessed);
+            }
+            else if (status == MPSolver.ResultStatus.FEASIBLE) {
+                newSolution = feasibleResult(stopWatch, solver, p, c, partialScore);
+            }
+
+            if (newSolution != null && computeObjectiveFunction(newSolution) > partialScore) {
+                return newSolution;
+            } else {
+                return partialSolution;
+            }
+        }
+        else {
+            return notFoundResult(stopWatch, solver, objective, p, c);
         }
 
-        return null;
+        // return null;
     }
 
     /*
