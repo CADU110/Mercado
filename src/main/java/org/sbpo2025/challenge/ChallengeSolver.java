@@ -56,7 +56,7 @@ public class ChallengeSolver {
     }
 
     public ChallengeSolution solve(StopWatch stopWatch) {
-        MPSolver solver = MPSolver.createSolver("SCIP");
+        MPSolver solver = MPSolver.createSolver("SAT");
         
         if (solver == null)
             return null;
@@ -103,14 +103,12 @@ public class ChallengeSolver {
         }
 
         // Objetivo
-        // Min (10^5*Corredores - 1*Itens)
+        // Min (UB*(total de corredores acessado) - (total de itens selecionados))
         
-        double M = 100000.0; // Peso corredores (ajustar)
-        double K = 1.0; // Peso itens (ajustar)
         MPObjective objective = solver.objective();
 
         for (int i = 0; i < nAisles; i++) {
-            objective.setCoefficient(c[i], M);
+            objective.setCoefficient(c[i], waveSizeUB);
         }
 
         for (int orderIdx = 0; orderIdx < nOrders; orderIdx++) {
@@ -118,7 +116,7 @@ public class ChallengeSolver {
             for (int quantity : orders.get(orderIdx).values()) {
                 totalItemsInOrder += quantity;
             }
-            objective.setCoefficient(p[orderIdx], -K * totalItemsInOrder);
+            objective.setCoefficient(p[orderIdx], -totalItemsInOrder);
         }
 
         objective.setMinimization();
